@@ -9,6 +9,6 @@ echo "Usage:  $0 [help|create|destroy|start|stop|connect|upload file|download fi
 myssh.sh is a subset of dvm.sh that I use to work with VMs from others. I just need to edit the DNS of the VM.\
 echo "Usage:  $0 [help|connect|upload file|download file|rupload dir|rdownload dir]"
 
-awsparams.sh has all the AWS secrets needed. Use awsparams-template.sh to build it.
+awsparams.sh declares all the AWS secrets needed. Use awsparams-template.sh to build it.
 
 Enjoy!
