@@ -11,4 +11,6 @@ echo "Usage:  $0 [help|connect|upload file|download file|rupload dir|rdownload d
 
 awsparams.sh declares all the AWS secrets needed. Use awsparams-template.sh to build it.
 
+To run these shell scripts you just need to have installed the aws cli. latest details and how to install it here https://aws.amazon.com/cli/
+
 Enjoy!
