@@ -42,7 +42,7 @@ if [ "upload" == "$1" ]; then
 		-i $KEYNAME.pem \
 		$2 \
 		ec2-user@$INSTANCEDNS:~
-
+	echo "Done!"
 	exit
 fi
 
@@ -53,7 +53,7 @@ if [ "rupload" == "$1" ]; then
 		-i $KEYNAME.pem \
 		$2 \
 		ec2-user@$INSTANCEDNS:~
-
+	echo "Done!"
 	exit
 fi
 
@@ -64,7 +64,7 @@ if [ "download" == "$1" ]; then
 		-i $KEYNAME.pem \
 		ec2-user@$INSTANCEDNS:~/$2 \
 		.
-
+	echo "Done!"
 	exit
 fi
 
@@ -75,12 +75,13 @@ if [ "rdownload" == "$1" ]; then
 		-i $KEYNAME.pem \
 		ec2-user@$INSTANCEDNS:~/$2 \
 		.
-
+	echo "Done!"
 	exit
 fi
 
 if [ "stop" == "$1" ]; then 
 	aws ec2 stop-instances --instance-ids $INSTANCEID
+	echo "Done!"
 	exit
 fi
 
@@ -90,9 +91,47 @@ if [ "connect" == "$1" ]; then
 		-o StrictHostKeyChecking=no \
 		-i $KEYNAME.pem \
 		ec2-user@$INSTANCEDNS
-
+	echo "Done!"
 	exit
 fi
+
+#
+# start an instance
+#
+
+if [ "start" == "$1" ]; then 
+
+	INSTANCEID=$(aws ec2 describe-instances \
+        	--filters "Name=key-name,Values=$KEYNAME" \
+        		"Name=instance-state-name,Values=stopped" \
+        	--query 'Reservations[0].Instances[0].InstanceId' \
+		| sed 's/"//g')
+
+	if [ "null" == "$INSTANCEID" ]; then 
+		echo "No instance available. Exiting."
+		exit
+	fi
+
+	# start the instance
+	aws ec2 start-instances --instance-ids $INSTANCEID
+
+	#wait till the instance is started
+	sleep 5
+
+	#get dns of the instance
+	INSTANCEDNS=$(aws ec2 describe-instances \
+		--instance-ids $INSTANCEID \
+		--query 'Reservations[0].Instances[0].PublicDnsName' \
+		| sed 's/"//g')
+	echo "DNS: " $INSTANCEDNS
+
+	echo "Done!"
+	exit
+fi
+
+#
+# destroy an instance
+#
 
 if [ "destroy" == "$1" ]; then 
 	# terminate the instance
@@ -111,40 +150,7 @@ if [ "destroy" == "$1" ]; then
 	aws ec2 delete-security-group \
 		--group-name $SGNAME
 
-	exit
-fi
-
-#
-# start an instance
-#
-
-if [ "start" == "$1" ]; then 
-
-	INSTANCEID=$(aws ec2 describe-instances \
-        	--filters "Name=key-name,Values=$KEYNAME" \
-        		"Name=instance-state-name,Values=stopped" \
-        	--query 'Reservations[0].Instances[0].InstanceId' \
-		| sed 's/"//g')
-
-	if [ "null" != "$INSTANCEID" ]; then 
-		# start the instance
-		aws ec2 start-instances --instance-ids $INSTANCEID
-	
-		#wait for the instance to start
-		sleep 5
-
-		#get dns of the instance
-		INSTANCEDNS=$(aws ec2 describe-instances \
-			--instance-ids $INSTANCEID \
-			--query 'Reservations[0].Instances[0].PublicDnsName' \
-			| sed 's/"//g')
-
-		#connect to the dvm instance
-		ssh -q -o UserKnownHostsFile=/dev/null \
-			-o StrictHostKeyChecking=no \
-			-i $KEYNAME.pem \
-			ec2-user@$INSTANCEDNS
-	fi
+	echo "Done!"
 	exit
 fi
 
@@ -163,18 +169,10 @@ VPCID=$(aws ec2 describe-vpcs \
 	--filters 'Name=is-default, Values=true' \
 	--query 'Vpcs[0].VpcId' \
 	| sed 's/"//g')
-
-#create the key pair to access the dvm instance
-aws ec2 create-key-pair \
-	--key-name $KEYNAME \
-	--key-type rsa \
-	--query 'KeyMaterial' \
-	| sed 's/"//g' \
-	| sed 's/\\n/\\\n/g' \
-	| sed 's/\\//g' \
-	> $KEYNAME.pem
-#only me can access the key
-chmod 400 $KEYNAME.pem
+if [ "null" == "$VPCID" ]; then 
+	echo "No default VPC. Exiting"
+	exit
+fi
 
 #create a security group
 SGID=$(aws ec2 create-security-group \
@@ -189,17 +187,39 @@ aws ec2 authorize-security-group-ingress \
     --group-id $SGID \
     --protocol tcp \
     --port 22 \
-    --cidr 0.0.0.0/0
+    --cidr 0.0.0.0/0 \
+	--query 'Return'
+
 aws ec2 authorize-security-group-ingress \
     --group-id $SGID \
     --protocol tcp \
     --port 80 \
-    --cidr 0.0.0.0/0
+    --cidr 0.0.0.0/0 \
+	--query 'Return'
+
 aws ec2 authorize-security-group-ingress \
     --group-id $SGID \
     --protocol tcp \
     --port 443 \
-    --cidr 0.0.0.0/0
+    --cidr 0.0.0.0/0 \
+	--query 'Return'
+
+#create the key pair to access the dvm instance
+#in case we had a previous key file
+chmod 700 $KEYNAME.pem
+rm $KEYNAME.pem
+
+aws ec2 create-key-pair \
+	--key-name $KEYNAME \
+	--key-type rsa \
+	--query 'KeyMaterial' \
+	| sed 's/"//g' \
+	| sed 's/\\n/\\\n/g' \
+	| sed 's/\\//g' \
+	> $KEYNAME.pem
+
+#only me can read the key
+chmod 400 $KEYNAME.pem
 
 #select the image to use
 #IMGID=$(aws ec2 describe-images \
@@ -211,17 +231,19 @@ aws ec2 authorize-security-group-ingress \
 #		'Name=virtualization-type,Values=hvm' \
 #		'Name=platform,Values=Amazon linux' \
 #	--query 'sort_by(Images, &CreationDate)[-1]. ImageId')
-IMGID=$(aws ssm get-parameters \
-	--names /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 \
-	--query 'Parameters[0].Value' \
-	| sed 's/"//g')
+#IMGID=$(aws ssm get-parameters \
+#	--names /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-arm64-gp2 \
+#	--query 'Parameters[0].Value' \
+#	| sed 's/"//g')
+
+IMGID=ami-0582e4fe9b72a5fe1
+INSTANCETYPE=t4g.medium
 
 #create an ec2 instance
 INSTANCEID=$(aws ec2 run-instances \
 	--image-id $IMGID \
 	--security-group-ids $SGID \
-	--instance-type t3.xlarge \
-	--ebs-optimized \
+	--instance-type $INSTANCETYPE \
 	--count 1:1 \
 	--key-name $KEYNAME \
 	--query 'Instances[0].InstanceId' \
@@ -232,6 +254,7 @@ INSTANCEDNS=$(aws ec2 describe-instances \
 	--instance-ids $INSTANCEID \
 	--query 'Reservations[0].Instances[0].PublicDnsName' \
 	| sed 's/"//g')
+echo "DNS: " $INSTANCEDNS
 
 #install git in the dvm
 ssh -q -o UserKnownHostsFile=/dev/null \
@@ -249,8 +272,10 @@ ssh -q -o UserKnownHostsFile=/dev/null \
 	-o StrictHostKeyChecking=no \
 	-i $KEYNAME.pem \
 	ec2-user@$INSTANCEDNS <<EOF
-	sudo amazon-linux-extras install docker
+	sudo yum install -y docker
 	sudo service docker start
 	sudo systemctl enable docker
 	sudo usermod -a -G docker ec2-user
 EOF
+
+echo "Done!"
