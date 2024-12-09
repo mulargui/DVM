@@ -264,7 +264,7 @@ ssh -q -o UserKnownHostsFile=/dev/null \
 	sudo yum update -y
 	sudo yum install git -y
 	git config --global user.name "mulargui"
-	git config --global user.email mauricio@ulargui.com
+	git config --global user.email contact@ulargui.com
 EOF
 
 #install docker in the dvm
